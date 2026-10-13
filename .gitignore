@@ -1,0 +1,5 @@
+# release zips and old working copies stay on this computer
+*.zip
+_old-working-copies*/
+__pycache__/
+.claude/

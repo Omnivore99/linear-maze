@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Linear Maze</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;600&family=Major+Mono+Display&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: a full-bleed canvas; the HUD sits in the four corners like instrument dials,
+   and pop-ups are brass-framed plates set over the action. One committed dark look. */
+:root {
+  --ink: #090b10;
+  --ink-2: #10131b;
+  --plate: rgba(12, 14, 20, 0.9);
+  --line: rgba(214, 172, 96, 0.26);
+  --line-strong: rgba(214, 172, 96, 0.62);
+  --brass: #e0b25a;
+  --brass-dim: #9c7a3c;
+  --bone: #ebe4d4;
+  --muted: #8f95a3;
+  --hp: #e4574d;
+  --hp-ghost: #f3c8a2;
+  --shield: #5cc8e8;
+  --good: #8fe0a0;
+  --bad: #f08a7a;
+  --warn: #f2c35b;
+  --font-mark: 'Major Mono Display', 'Courier New', monospace;
+  --font-head: 'Big Shoulders Display', 'Arial Narrow', 'Helvetica Neue', sans-serif;
+  --font-ui: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-lore: 'Spectral', Georgia, 'Times New Roman', serif;
+  --gap: 16px;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; background: var(--ink); color: var(--bone); overflow: hidden; }
+body { font: 13px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
+#app { position: fixed; inset: 0; background: var(--ink); }
+#game { position: absolute; inset: 0; display: block; cursor: none; touch-action: none; }
+.num, .stats dd, #hp-num, #sh-num, #w-ammo, #gold-num { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; }
+kbd {
+  display: inline-grid; place-items: center; min-width: 1.7em; height: 1.7em; padding: 0 0.35em;
+  font: 600 11px/1 var(--font-ui); color: var(--ink); background: var(--brass); border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------- HUD */
+#hud { position: absolute; inset: 0; pointer-events: none; }
+.hud-plate {
+  background: var(--plate); border: 1px solid var(--line); padding: 10px 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.hud-tl { position: absolute; left: var(--gap); top: calc(var(--gap) + env(safe-area-inset-top, 0px)); width: min(300px, 48vw); }
+.hud-tr { position: absolute; right: var(--gap); top: calc(var(--gap) + env(safe-area-inset-top, 0px)); display: grid; gap: 6px; justify-items: end; }
+.hud-bl { position: absolute; left: var(--gap); bottom: calc(var(--gap) + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; }
+.hud-br { position: absolute; right: var(--gap); bottom: calc(var(--gap) + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; justify-items: end; }
+.vital-row { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 10px; }
+.vital-row + .vital-row { margin-top: 6px; }
+.lbl { font: 600 10px/1 var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.bar { position: relative; height: 9px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.bar::after {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(9, 11, 16, 0.85) calc(10% - 1px) 10%);
+}
+.bar i, .bar b { position: absolute; left: 0; top: 0; bottom: 0; }
+.bar b { background: var(--hp-ghost); opacity: 0.55; }
+.bar i { background: linear-gradient(180deg, #f07a6c, var(--hp)); z-index: 1; transition: width 0.08s linear; }
+#sh-row .bar i { background: linear-gradient(180deg, #9be3f5, var(--shield)); }
+#hp-num, #sh-num { font: 600 12px/1 var(--font-ui); min-width: 66px; text-align: right; }
+.dash-track { margin-top: 8px; height: 2px; background: rgba(255, 255, 255, 0.07); }
+#dash-fill { display: block; height: 100%; background: var(--brass); }
+#hud.low .hud-tl .hud-plate { animation: lowpulse 1.1s ease-in-out infinite; }
+@keyframes lowpulse { 50% { border-color: rgba(228, 87, 77, 0.8); box-shadow: 0 0 22px rgba(228, 87, 77, 0.35); } }
+
+.level-card { text-align: right; }
+#lvl-floor { display: block; font: 600 10px/1 var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); }
+#lvl-name { display: block; margin-top: 4px; font: 800 20px/1 var(--font-head); letter-spacing: 0.03em; text-transform: uppercase; }
+#minimap { width: 176px; height: 124px; display: block; border: 1px solid var(--line); }
+
+.weapon-card { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; min-width: 230px; }
+#w-icon { width: 84px; height: 40px; display: grid; place-items: center; }
+#w-name { font: 800 21px/1 var(--font-head); text-transform: uppercase; letter-spacing: 0.02em; }
+#w-ammo { margin-top: 4px; font: 600 12px/1 var(--font-ui); color: var(--brass); }
+#w-slots { display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px; }
+.slot {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 4px;
+  background: var(--plate); border: 1px solid rgba(255, 255, 255, 0.07);
+  font: 600 10px/1.2 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.slot b { display: inline-grid; place-items: center; width: 15px; height: 15px; background: rgba(255, 255, 255, 0.08); color: var(--bone); }
+.slot.on { border-color: var(--line-strong); color: var(--bone); }
+.slot.on b { background: var(--brass); color: var(--ink); }
+.slot.empty { opacity: 0.45; }
+
+.purse { display: flex; align-items: center; gap: 10px; }
+.coin { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff2b8, #e9b343 55%, #9a6a1c); box-shadow: 0 0 10px rgba(240, 192, 72, 0.5); }
+#gold-num { font: 800 24px/1 var(--font-head); letter-spacing: 0.02em; }
+#keys { display: flex; gap: 6px; }
+.keychip { display: inline-block; width: 18px; height: 8px; background: var(--k); box-shadow: 0 0 10px var(--k); border-radius: 1px; }
+.keychip.big { width: auto; height: auto; padding: 3px 8px; color: var(--ink); font: 600 11px/1.3 var(--font-ui); }
+#armor-strip { display: flex; gap: 4px; }
+#armor-strip canvas { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.06); }
+
+#prompt {
+  position: absolute; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px;
+  background: var(--plate); border: 1px solid var(--line-strong);
+  font: 600 12px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+}
+#toasts { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: grid; gap: 6px; justify-items: center; width: min(560px, calc(100vw - 32px)); }
+.toast {
+  padding: 6px 12px; background: var(--plate); border-left: 2px solid var(--brass);
+  font: 600 12px/1.4 var(--font-ui); letter-spacing: 0.03em; animation: toastIn 0.18s ease-out;
+  transition: opacity 0.4s, transform 0.4s;
+}
+.toast.warn { border-left-color: var(--hp); }
+.toast.good { border-left-color: var(--good); }
+.toast.key { border-left-color: var(--warn); }
+.toast.out { opacity: 0; transform: translateY(-6px); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(6px); } }
+#room-title {
+  position: absolute; left: 0; right: 0; top: 24%; display: grid; justify-items: center; gap: 6px;
+  text-align: center; opacity: 0; padding-inline: var(--gap);
+}
+#room-title.show { animation: roomTitle 3.6s ease-out forwards; }
+.rt-kicker { font: 600 11px/1 var(--font-ui); letter-spacing: 0.32em; text-transform: uppercase; color: var(--brass); }
+.rt-name { font: 800 clamp(28px, 5vw, 54px)/1 var(--font-head); letter-spacing: 0.08em; text-transform: uppercase; text-shadow: 0 2px 30px rgba(0, 0, 0, 0.9); text-wrap: balance; }
+@keyframes roomTitle {
+  0% { opacity: 0; transform: translateY(8px); letter-spacing: 0.02em; }
+  14% { opacity: 1; transform: none; }
+  72% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* gadget chips (the phone) */
+#gadgets { display: flex; gap: 6px; }
+.gadget-chip {
+  position: relative; pointer-events: auto; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 4px;
+  background: var(--plate); border: 1px solid var(--line);
+  font: 600 10.5px/1.2 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--bone);
+}
+.gadget-chip:hover { border-color: var(--line-strong); }
+.gadget-chip b { display: inline-grid; place-items: center; min-width: 17px; height: 17px; background: var(--brass); color: var(--ink); }
+.gadget-chip .badge {
+  position: absolute; top: -7px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
+  display: grid; place-items: center; border-radius: 9px; background: var(--hp); color: #fff;
+  font: 700 10px/1 var(--font-ui); font-style: normal; animation: badgePulse 1.6s ease-in-out infinite;
+}
+@keyframes badgePulse { 50% { box-shadow: 0 0 0 5px rgba(228, 87, 77, 0.18); } }
+.toast.phone { border-left-color: var(--shield); }
+
+/* ---------------------------------------------------------------- pop-ups */
+#modal {
+  position: absolute; inset: 0; display: grid; place-items: center; padding: var(--gap);
+  padding-block: calc(var(--gap) + env(safe-area-inset-top, 0px)) calc(var(--gap) + env(safe-area-inset-bottom, 0px));
+  background: rgba(5, 6, 9, 0.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.panel {
+  position: relative; width: min(560px, 100%); max-height: calc(100vh - 48px); overflow: auto;
+  background: linear-gradient(180deg, rgba(20, 23, 32, 0.97), rgba(11, 13, 19, 0.97));
+  border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
+  animation: panelIn 0.16s ease-out;
+}
+.panel.wide { width: min(1040px, 100%); }
+.panel::before, .panel::after { content: ''; position: absolute; width: 18px; height: 18px; pointer-events: none; }
+.panel::before { left: -1px; top: -1px; border-left: 2px solid var(--brass); border-top: 2px solid var(--brass); }
+.panel::after { right: -1px; bottom: -1px; border-right: 2px solid var(--brass); border-bottom: 2px solid var(--brass); }
+@keyframes panelIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+.panel header { padding: 20px 24px 0; }
+.kicker { font: 600 10.5px/1.2 var(--font-ui); letter-spacing: 0.24em; text-transform: uppercase; color: var(--brass); }
+.panel h2 { margin: 6px 0 0; font: 800 34px/1 var(--font-head); letter-spacing: 0.03em; text-transform: uppercase; text-wrap: balance; }
+.panel h3 { margin: 18px 0 8px; font: 600 10.5px/1 var(--font-ui); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+.panel h3:first-child { margin-top: 0; }
+.panel-body { padding: 16px 24px 4px; }
+.panel-body p { margin: 0 0 12px; max-width: 62ch; }
+.panel footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 24px 22px; }
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 12px; }
+.lore { font: italic 400 17px/1.55 var(--font-lore); color: #d9d0bd; max-width: 60ch; }
+.lore-block { border-left: 1px solid var(--line); padding-left: 16px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer;
+  font: 600 12px/1 var(--font-ui); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--bone); background: rgba(224, 178, 90, 0.06); border: 1px solid var(--line-strong); border-radius: 1px;
+}
+.btn:hover:not(:disabled) { background: rgba(224, 178, 90, 0.16); }
+.btn:focus-visible, .inv-weapon:focus-visible, .loot:focus-visible, .choice:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.btn.primary { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+.btn.primary:hover:not(:disabled) { background: #f0c46c; }
+.btn.primary kbd { background: var(--ink); color: var(--brass); }
+.btn.quiet { border-color: transparent; color: var(--muted); background: transparent; }
+.btn.quiet:hover:not(:disabled) { color: var(--bone); }
+.btn:disabled { opacity: 0.38; cursor: not-allowed; }
+.btn.small { padding: 6px 9px; font-size: 10.5px; }
+
+.stats { display: grid; grid-template-columns: 1fr auto; gap: 6px 18px; margin: 0; }
+.stats dt { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; align-self: center; }
+.stats dd { margin: 0; text-align: right; font-weight: 600; }
+.stats.big dd { font: 800 20px/1 var(--font-head); letter-spacing: 0.02em; }
+.stats.big { margin-bottom: 18px; }
+.mods { list-style: none; margin: 4px 0 0; padding: 0; font-size: 11.5px; }
+.mods li.good { color: var(--good); }
+.mods li.bad { color: var(--bad); }
+
+/* loot (chests) */
+.loot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.loot {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; padding: 8px 10px; cursor: pointer; text-align: left;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.loot:hover { border-color: var(--line-strong); background: rgba(224, 178, 90, 0.08); }
+.loot.taken { opacity: 0.35; pointer-events: none; }
+.loot span { font-weight: 600; font-size: 12px; line-height: 1.3; min-width: 0; }
+.loot small { display: block; color: var(--muted); font-weight: 400; }
+.icon { display: block; }
+
+/* compare cards (weapons / armor) */
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.card { padding: 12px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.025); min-width: 0; }
+.card.new { border-color: var(--line-strong); }
+.card .card-kicker { font: 600 10px/1 var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.card strong { display: block; margin: 6px 0; font: 800 19px/1.1 var(--font-head); letter-spacing: 0.02em; text-transform: uppercase; }
+.card p { font-size: 12px; color: #cfc8b8; margin: 8px 0 0; }
+
+/* stations, altars, slots */
+.meter { margin: 10px 0; }
+.meter-head { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+.meter-head b { color: var(--bone); font-variant-numeric: tabular-nums; }
+.meter .bar { height: 10px; }
+.meter .bar i { background: linear-gradient(180deg, #c6b0ff, #8f6cf0); transition: width 0.4s ease-out; }
+.meter.shield .bar i { background: linear-gradient(180deg, #9be3f5, var(--shield)); }
+.meter.reserve .bar i { background: linear-gradient(180deg, #f2d48a, var(--brass)); }
+.choices { display: grid; gap: 8px; }
+.choice {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 12px 14px; cursor: pointer; text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.09); background: rgba(255, 255, 255, 0.03);
+}
+.choice:hover:not(:disabled) { border-color: var(--line-strong); background: rgba(224, 178, 90, 0.08); }
+.choice:disabled { opacity: 0.4; cursor: not-allowed; }
+.choice strong { font: 800 18px/1 var(--font-head); text-transform: uppercase; letter-spacing: 0.03em; }
+.choice .cost { font-weight: 600; color: var(--brass); font-variant-numeric: tabular-nums; }
+.choice small { grid-column: 1 / -1; color: var(--muted); }
+.result { min-height: 1.5em; margin-top: 12px; font-weight: 600; }
+.result.good { color: var(--good); }
+.result.bad { color: var(--bad); }
+
+.slots-machine { display: grid; gap: 14px; }
+.reels { display: grid; grid-template-columns: repeat(3, 76px); gap: 8px; justify-content: center; padding: 12px; background: #07080b; border: 1px solid var(--line); box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8); }
+.reel { height: 76px; overflow: hidden; position: relative; background: linear-gradient(180deg, #1a1712, #2a241a 50%, #1a1712); border: 1px solid rgba(255, 255, 255, 0.06); }
+.reel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.65), transparent 30%, transparent 70%, rgba(0,0,0,0.65)); pointer-events: none; }
+.strip { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.strip canvas { display: block; margin: 0 auto; }
+.paytable { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 14px; font-size: 11.5px; color: var(--muted); }
+.paytable div { display: flex; align-items: center; gap: 6px; }
+.paytable b { color: var(--bone); margin-left: auto; font-variant-numeric: tabular-nums; }
+.bets { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.bets .btn.on { border-color: var(--brass); background: rgba(224, 178, 90, 0.22); }
+
+/* inventory */
+.inv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 22px; }
+.inv-col { min-width: 0; }
+.inv-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.inv-row.empty { grid-template-columns: 1fr auto; color: var(--muted); }
+.inv-info { display: grid; gap: 2px; min-width: 0; }
+.inv-info strong { font: 800 15px/1.1 var(--font-head); letter-spacing: 0.03em; text-transform: uppercase; }
+.slot-name { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.inv-weapon {
+  display: grid; grid-template-columns: 18px auto 1fr; gap: 10px; align-items: center; width: 100%; padding: 6px 8px; margin-bottom: 4px; cursor: pointer; text-align: left;
+  background: transparent; border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.inv-weapon.on { border-color: var(--line-strong); background: rgba(224, 178, 90, 0.07); }
+.inv-weapon .num { color: var(--brass); }
+.bless { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12px; }
+.keyrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.pause-grid { display: grid; gap: 12px; }
+
+/* dialog */
+.panel.dialog-panel { width: min(640px, 100%); }
+.dlg { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: start; }
+.dlg-portrait canvas { border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+.dlg-text p { margin: 0 0 10px; font: 400 17px/1.5 var(--font-lore); color: #ece4d2; max-width: 52ch; }
+.dlg-options { display: grid; gap: 6px; margin-top: 14px; }
+.dlg-choice { grid-template-columns: auto minmax(0, 1fr); padding: 9px 12px; font: 400 13px/1.4 var(--font-ui); color: var(--bone); }
+.dlg-choice b { display: inline-grid; place-items: center; width: 18px; height: 18px; background: rgba(224, 178, 90, 0.16); color: var(--brass); font-size: 11px; }
+@media (max-width: 560px) { .dlg { grid-template-columns: minmax(0, 1fr); } .dlg-portrait canvas { width: 64px !important; height: 64px !important; } }
+
+/* ---------------------------------------------------------------- title screen */
+#title-screen {
+  position: absolute; inset: 0; overflow: auto;
+  background:
+    linear-gradient(90deg, rgba(9, 11, 16, 0.96) 0%, rgba(9, 11, 16, 0.86) 38%, rgba(9, 11, 16, 0.15) 75%, rgba(9, 11, 16, 0.35) 100%),
+    linear-gradient(0deg, rgba(9, 11, 16, 0.85), transparent 30%);
+}
+.title-inner {
+  min-height: 100%; box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); align-content: center; gap: 26px;
+  padding-inline: clamp(16px, 7vw, 110px); padding-block: 40px; max-width: 760px;
+}
+.wordmark {
+  margin: 0; font: 400 clamp(42px, 7.4vw, 104px)/0.95 var(--font-mark); color: var(--brass);
+  text-shadow: 0 0 40px rgba(224, 178, 90, 0.28); letter-spacing: -0.01em;
+}
+.wordmark span { display: block; }
+.wordmark span:nth-child(2) { padding-left: 1.1em; }
+.wordmark span:nth-child(3) { padding-left: 2.2em; }
+.tagline { margin: 0; max-width: 46ch; font: italic 400 19px/1.5 var(--font-lore); color: #d8cfbb; }
+.title-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.title-actions .btn { padding: 14px 18px; font-size: 13px; }
+.controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); gap: 8px 22px; max-width: 640px; }
+.controls div { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.controls kbd { background: rgba(255, 255, 255, 0.08); color: var(--bone); min-width: 2.6em; }
+.title-foot { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.title-foot b { color: var(--brass-dim); font-weight: 600; }
+.touch-note { display: none; color: var(--warn); font-size: 12px; }
+@media (hover: none) and (pointer: coarse) { .touch-note { display: block; } }
+
+#err { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 8px 12px; background: #3a1210; border: 1px solid var(--hp); font-size: 12px; z-index: 20; }
+
+@media (max-width: 720px) {
+  .hud-tl { width: min(240px, 56vw); }
+  #minimap { width: 120px; height: 85px; }
+  #lvl-name { font-size: 15px; }
+  .weapon-card { min-width: 0; }
+  #w-name { font-size: 16px; }
+  #w-slots { max-width: 60vw; }
+  .panel h2 { font-size: 27px; }
+  .panel header, .panel-body, .panel footer { padding-inline: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game" aria-label="Game view"></canvas>
+
+  <div id="hud" hidden>
+    <div class="hud-tl">
+      <div class="hud-plate">
+        <div class="vital-row"><span class="lbl">Health</span><div class="bar"><b id="hp-ghost"></b><i id="hp-fill"></i></div><span id="hp-num">100 / 100</span></div>
+        <div class="vital-row" id="sh-row" hidden><span class="lbl">Shield</span><div class="bar"><i id="sh-fill"></i></div><span id="sh-num">0 / 0</span></div>
+        <div class="dash-track" title="Dash"><span id="dash-fill"></span></div>
+      </div>
+    </div>
+    <div class="hud-tr">
+      <div class="level-card"><span id="lvl-floor">Floor 1</span><span id="lvl-name"></span></div>
+      <canvas id="minimap" width="176" height="124"></canvas>
+    </div>
+    <div class="hud-bl">
+      <div class="hud-plate weapon-card"><div id="w-icon"></div><div><div id="w-name"></div><div id="w-ammo"></div></div></div>
+      <div id="w-slots"></div>
+      <div id="gadgets"></div>
+    </div>
+    <div class="hud-br">
+      <div id="armor-strip"></div>
+      <div class="hud-plate purse"><div id="keys"></div><span class="coin" aria-hidden="true"></span><span id="gold-num">0</span></div>
+    </div>
+    <div id="prompt" hidden></div>
+    <div id="toasts"></div>
+    <div id="room-title"></div>
+  </div>
+
+  <div id="modal" hidden></div>
+
+  <div id="title-screen" hidden>
+    <div class="title-inner">
+      <h1 class="wordmark" aria-label="The Linear Maze"><span>the</span><span>linear</span><span>maze</span></h1>
+      <p class="tagline">Passages and chambers, one after another. Shoot what moves, take what glitters, and find the stairs down.</p>
+      <div class="title-actions">
+        <button class="btn primary" id="btn-new" type="button"><span>Begin the descent</span></button>
+        <button class="btn" id="btn-continue" type="button" hidden><span>Continue</span></button>
+      </div>
+      <p class="touch-note">This game needs a keyboard and mouse.</p>
+      <div class="controls" aria-label="Controls">
+        <div><kbd>WASD</kbd>Move</div>
+        <div><kbd>Mouse</kbd>Aim</div>
+        <div><kbd>Click</kbd>Fire (hold)</div>
+        <div><kbd>Shift</kbd>Dash</div>
+        <div><kbd>E</kbd>Use, open, talk</div>
+        <div><kbd>1&ndash;9</kbd>Switch weapon</div>
+        <div><kbd>Tab</kbd>Inventory</div>
+        <div><kbd>Esc</kbd>Pause</div>
+        <div><kbd>F</kbd>Phone</div>
+        <div><kbd>M</kbd>Sound on or off</div>
+      </div>
+      <p class="title-foot">Iteration 0.2 &middot; Content packs: <b id="pack-list"></b></p>
+    </div>
+  </div>
+
+  <div id="err" hidden></div>
+</div>
+
+<!-- engine -->
+<script src="engine/core.js"></script>
+<script src="engine/input.js"></script>
+<script src="engine/audio.js"></script>
+<script src="engine/level.js"></script>
+<script src="engine/physics.js"></script>
+<script src="engine/render.js"></script>
+<script src="engine/particles.js"></script>
+<script src="engine/combat.js"></script>
+<script src="engine/player.js"></script>
+<script src="engine/entities.js"></script>
+<script src="engine/npc.js"></script>
+<script src="engine/traps.js"></script>
+<script src="engine/ui.js"></script>
+<script src="engine/game.js"></script>
+<!-- content packs -->
+<script src="packs/core/environments.js"></script>
+<script src="packs/core/terrain.js"></script>
+<script src="packs/core/weapons.js"></script>
+<script src="packs/core/enemies.js"></script>
+<script src="packs/core/items.js"></script>
+<script src="packs/core/armor.js"></script>
+<script src="packs/core/effects.js"></script>
+<!-- levels -->
+<script src="levels/01-sunken-cloister.js"></script>
+<script src="levels/02-ember-foundry.js"></script>
+<script src="levels/03-gilded-reliquary.js"></script>
+<!-- office pack: an optional prologue on the 14th floor (remove these five lines to start in the maze) -->
+<script src="packs/office/environment.js"></script>
+<script src="packs/office/furniture.js"></script>
+<script src="packs/office/npcs.js"></script>
+<script src="packs/office/phone.js"></script>
+<script src="levels/00-meridian-fourteen.js"></script>
+<!-- memos pack: posters, notices, desk toys, cameras, email and the three scores (needs the office pack) -->
+<script src="packs/memos/content.js"></script>
+<script src="packs/memos/scores.js"></script>
+<script src="packs/memos/items.js"></script>
+<script src="packs/memos/email.js"></script>
+<script src="packs/memos/placements.js"></script>
+<!-- chessboard pack: The Office on Chessboard 1, a floor after the Reliquary (needs the office and memos packs) -->
+<script src="packs/chessboard/environment.js"></script>
+<script src="packs/chessboard/enemies.js"></script>
+<script src="packs/chessboard/npcs.js"></script>
+<script src="packs/chessboard/meeting.js"></script>
+<script src="packs/chessboard/workday.js"></script>
+<script src="packs/chessboard/items.js"></script>
+<script src="packs/chessboard/placements.js"></script>
+<script src="packs/chessboard/layout.js"></script>
+<script src="levels/04-chessboard-one.js"></script>
+<!-- apartment pack: Apartment (Chessboard 0), home, the first floor of a run (needs the office and memos packs) -->
+<script src="packs/apartment/content.js"></script>
+<script src="packs/apartment/environment.js"></script>
+<script src="packs/apartment/items.js"></script>
+<script src="levels/apartment-chessboard-zero.js"></script>
+<!-- rotary pack: a red rotary phone on every floor, each with its own 7-digit number -->
+<script src="packs/rotary/rotary.js"></script>
+<!-- dressings pack: furniture and fixtures for any floor (the editor's Dressings tab) -->
+<script src="packs/dressings/dressings.js"></script>
+<!-- the evening at home (tasks, the red phone rings), Home (Chessboard 1), and the Library Maze behind Dave's door -->
+<script src="packs/apartment/story.js"></script>
+<script src="levels/home-chessboard-one.js"></script>
+<script src="packs/library/environment.js"></script>
+<script src="packs/library/items.js"></script>
+<script src="packs/library/enemies.js"></script>
+<script src="levels/library-maze.js"></script>
+<!-- town pack: the morning after, the Town Map, the places you and Alice went, and the Maze of Forking Paths -->
+<script src="packs/town/environment.js"></script>
+<script src="packs/town/items.js"></script>
+<script src="packs/town/map.js"></script>
+<script src="packs/town/npcs.js"></script>
+<script src="packs/town/enemies.js"></script>
+<script src="packs/town/maze.js"></script>
+<script src="levels/town-map.js"></script>
+<script src="levels/town-places.js"></script>
+<script src="levels/maze-of-forking-paths.js"></script>
+<!-- editor pack: everything changed in the Linear Maze Editor (editor/index.html). Remove these three lines to undo all of it. -->
+<script src="packs/editor/runtime.js"></script>
+<script src="packs/editor/sprites.js"></script>
+<script src="packs/editor/edits.js"></script>
+<!-- start -->
+<script>
+  document.getElementById('btn-new').addEventListener('click', () => { LM.audio.unlock(); LM.ui.hideTitle(); LM.game.newRun(); });
+  document.getElementById('btn-continue').addEventListener('click', () => { LM.audio.unlock(); LM.ui.hideTitle(); LM.game.continueRun(); });
+  LM.boot();
+</script>
+</body>
+</html>

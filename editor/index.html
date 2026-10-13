@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linear Maze Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;1,400&display=swap">
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand"><span class="mark">Linear Maze</span><span class="sub">Editor</span></div>
+    <div id="folder-chip" class="chip" hidden></div>
+    <div class="spacer"></div>
+    <div id="dirty" class="dirty" hidden></div>
+    <span id="top-actions" hidden>
+      <button class="btn icon" id="btn-undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button class="btn icon" id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+      <button class="btn" id="btn-play" disabled>Play test</button>
+      <button class="btn primary" id="btn-save" disabled title="Save to the game folder (Ctrl+S)">Save</button>
+    </span>
+  </header>
+  <nav id="nav" hidden>
+    <a href="#/floors" data-view="floors">Floors</a>
+    <a href="#/map" data-view="map">Map</a>
+    <a href="#/items" data-view="items">Items</a>
+    <a href="#/monsters" data-view="monsters">Monsters</a>
+    <a href="#/player" data-view="player">Player</a>
+    <a href="#/gear" data-view="gear">Weapons &amp; gear</a>
+    <a href="#/tilesets" data-view="tilesets">Tile sets</a>
+    <a href="#/pictures" data-view="pictures">Pictures</a>
+    <a href="#/people" data-view="people">People</a>
+    <a href="#/settings" data-view="settings">Settings</a>
+    <a href="#/assistant" data-view="assistant" class="nav-ai">Ask Claude</a>
+    <div class="nav-foot"><a href="#/changes" data-view="changes">Changes</a></div>
+  </nav>
+  <main id="main">
+    <section id="welcome" class="welcome">
+      <h1>Linear Maze Editor</h1>
+      <p class="lede">Open the game folder to manage its floors, maps, items, monsters, tile sets and the player. Changes are saved into the folder as an editor pack, so the original pack files stay as they are.</p>
+      <div class="welcome-actions">
+        <button class="btn primary big" id="btn-open">Open game folder</button>
+        <button class="btn big" id="btn-reopen" hidden></button>
+      </div>
+      <p class="hint" id="open-hint">Pick the folder that holds <code>index.html</code>, <code>engine</code> and <code>packs</code> (for example <code>linear-maze-0.3</code>). The browser asks once for permission to edit files in it. Works in Chrome and Edge.</p>
+      <ul class="welcome-list">
+        <li><b>Floors</b> in order: drag, remove, duplicate, add.</li>
+        <li><b>Maps</b> painted with the floor’s own tiles, items, monsters and people, lit as in the game.</li>
+        <li><b>Items</b> and everything they do, from an altar’s blessings to a slot machine’s paytable.</li>
+        <li><b>Monsters</b>, their attacks, drops and looks, with picture import and image prompts.</li>
+        <li><b>The player</b> at the start of a run, and <b>tile sets</b> for new materials and moods.</li>
+        <li><b>Claude</b> can make or change any of these from a description.</li>
+      </ul>
+      <div id="open-fallback" class="fallback" hidden>
+        <p>This browser can’t save into folders. Use Chrome or Edge for the full editor, or open the folder read-only here and download the changed files when you save.</p>
+        <label class="btn">Open folder read-only<input type="file" id="dir-input" webkitdirectory directory multiple hidden></label>
+      </div>
+      <div id="load-status" class="load-status" hidden></div>
+    </section>
+    <section id="view" hidden></section>
+  </main>
+</div>
+<div id="frames" aria-hidden="true"></div>
+<div id="modal-root"></div>
+<div id="toasts" aria-live="polite"></div>
+
+<script src="js/util.js"></script>
+<script src="js/fs.js"></script>
+<script src="js/serialize.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/model.js"></script>
+<script src="js/schemas.js"></script>
+<script src="js/forms.js"></script>
+<script src="js/preview.js"></script>
+<script src="js/dressings.js"></script>
+<script src="js/views/floors.js"></script>
+<script src="js/views/content.js"></script>
+<script src="js/views/items.js"></script>
+<script src="js/views/monsters.js"></script>
+<script src="js/views/player.js"></script>
+<script src="js/views/gear.js"></script>
+<script src="js/views/tilesets.js"></script>
+<script src="js/views/people.js"></script>
+<script src="js/views/settings.js"></script>
+<script src="js/views/pictures.js"></script>
+<script src="js/mapedit.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/play.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
