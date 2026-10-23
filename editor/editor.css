@@ -378,3 +378,12 @@ kbd { font-family: var(--f-mono); font-size: 11px; border: 1px solid var(--line-
 .dress-set { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
 .dress-set .muted { font-size: 12px; }
 .dress-set select { flex: 1; min-width: 0; width: 100%; }
+
+/* animated sprite sheets (Look tab) */
+.sheet-look .sheet-grid { display: block; max-width: 100%; background: repeating-conic-gradient(#2a2a30 0 25%, #34343a 0 50%) 0 0 / 16px 16px; border: 1px solid var(--line, #444); }
+.sheet-anims { border-collapse: collapse; width: 100%; }
+.sheet-anims th { text-align: left; font-weight: 600; font-size: 11px; padding: 4px 6px; color: var(--muted, #999); }
+.sheet-anims td { padding: 4px 6px; vertical-align: middle; border-top: 1px solid var(--line, #333); }
+.sheet-anims input { width: 64px; }
+.sheet-preview { width: 64px; height: 64px; border: 1px solid var(--line, #444); display: block; }
+.hint.warn { color: #e8a040; }

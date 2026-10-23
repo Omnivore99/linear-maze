@@ -1087,3 +1087,18 @@ Levels: `library-1` (Library Maze 1) and `library-2` (Library Maze 2, the Lower 
 | `bone-armor` | armor | `maxShield: 50`, no regeneration. |
 
 Levels: `town-map`, `town-coffee`, `town-booknook`, `town-booknook-cb2`, `town-gas`, `town-park`, `town-movie`, `town-hospital`, `town-headshop`, `town-vhs`, `town-donuts`, `town-police`, `maze-forking-paths`.
+
+## 21. Animated sprite sheets (editor looks)
+
+A monster's `look` (applied by `packs/editor/runtime.js`) can be `{ type: 'sheet', ... }`:
+
+| Field | Meaning |
+|---|---|
+| `sprite` | The sheet's id in `packs/editor/sprites.js`. |
+| `frame: [w, h]` | One frame's size in pixels (default 64 × 64). |
+| `size` | Units across one frame in the game (a tile is 32). About 3.4 × the radius. |
+| `layout` | `'rotate'` (one row per animation, drawn facing `facing`, turned by the game) or `'4dir'` (four rows per animation: down, left, right, up). |
+| `anims` | `{ idle, walk, attack, hurt, death }`, each `{ row, frames, fps }` (rows and frames count from 0); `attack.hit` is the frame the blow lands on. `frames: 0` means the sheet doesn't have it. |
+| `pixelated`, `glow`, `eyes`, `bob`, `linger` | Sharp pixels; a glow and glowing eyes added as light; a gentle bob; seconds the death pose stays (default 6). |
+
+Defaults (`ED.SHEET.defaults('rotate')`): idle row 0 (4 frames, 6 fps), walk 1 (6, 10), attack 2 (6, 12, hit 3), hurt 3 (2, 12), death 4 (6, 10). In `'4dir'` each starts four rows further down. Templates and the guide: `editor/templates/`.

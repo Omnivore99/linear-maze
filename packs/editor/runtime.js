@@ -18,7 +18,7 @@
  *   touch        pickup effects, destructible effects
  *   loot data    loot tables as weighted lists instead of roll() code
  *   slots        a slot machine with an editable paytable
- *   look         drawings from parameters (creature / object) or imported sprites
+ *   look         drawings from parameters (creature / object), imported pictures, or animated sprite sheets
  *   image tiles  floor and wall painters that use imported pictures
  *
  * Load order: after every other pack and level, before LM.boot():
@@ -174,7 +174,7 @@
     else if (kind === 'enemies') buildEnemy(def);
     else if (kind === 'lootTables') buildLoot(def);
     else if (kind === 'npcs') {
-      if (def.look && def.look.type === 'sprite') Object.assign(def, ED.looks.sprite(def.look, 'npc'));
+      if (def.look && (def.look.type === 'sprite' || def.look.type === 'sheet')) Object.assign(def, ED.looks[def.look.type](def.look, 'npc'));
     }
     return def;
   };
@@ -995,6 +995,133 @@
     }
     return out;
   };
+
+  // ---------------------------------------------------------------- animated sprite sheets
+  // def.look = { type: 'sheet', sprite, frame: [w, h] (pixels), size (units across one frame),
+  //              layout: 'rotate' | '4dir', facing: 'right' (rotate only), pixelated, glow, eyes,
+  //              anims: { idle, walk, attack, hurt, death: { row, frames, fps, hit? } } }
+  // rotate: one row per animation, the monster drawn from above facing right; the game turns it.
+  // 4dir:   four rows per animation, in the order down, left, right, up; the game picks the row.
+  // The template and the full guide: editor/templates/ (SPRITE-SHEETS.md).
+  ED.SHEET = {
+    ANIMS: ['idle', 'walk', 'attack', 'hurt', 'death'],
+    DIRS: ['down', 'left', 'right', 'up'],
+    defaults(layout) {
+      const k = layout === '4dir' ? 4 : 1;
+      return {
+        idle: { row: 0, frames: 4, fps: 6 },
+        walk: { row: 1 * k, frames: 6, fps: 10 },
+        attack: { row: 2 * k, frames: 6, fps: 12, hit: 3 },
+        hurt: { row: 3 * k, frames: 2, fps: 12 },
+        death: { row: 4 * k, frames: 6, fps: 10 },
+      };
+    },
+  };
+  /** The spec for one animation (or null if the sheet doesn't have it). */
+  ED.sheetAnim = function (look, name) {
+    const a = Object.assign({}, ED.SHEET.defaults(look.layout)[name], (look.anims || {})[name]);
+    return a.frames > 0 ? a : null;
+  };
+  /** Which animation, and which frame of it, for a monster or person right now. */
+  ED.sheetPose = function (look, e) {
+    const t = e.t || 0;
+    const last = e._sheetT;
+    e._sheetT = t;
+    if (e._sheetDeath != null) {
+      const a = ED.sheetAnim(look, 'death');
+      if (a) return { a, i: Math.min(a.frames - 1, Math.floor(e._sheetDeath * (a.fps || 10))) };
+    }
+    const atk = e.atk && ED.sheetAnim(look, 'attack');
+    if (atk) {
+      // the wind-up plays the frames before the hit frame; the blow lands on the hit frame
+      const ad = e.atk.def || {}, wind = ad.windup || 0.3, hit = Math.min(atk.frames - 1, atk.hit == null ? Math.floor(atk.frames / 2) : atk.hit);
+      const at = e.atk.t || 0;
+      const i = at < wind ? Math.floor((at / wind) * hit) : hit + Math.floor(((at - wind) / Math.max(0.15, ad.recover || 0.3)) * (atk.frames - hit));
+      return { a: atk, i: Math.min(atk.frames - 1, Math.max(0, i)) };
+    }
+    if (e.flash > 0) e._hurtUntil = t + 0.25;
+    const hurt = e._hurtUntil > t && ED.sheetAnim(look, 'hurt');
+    if (hurt) return { a: hurt, i: Math.floor((0.25 - (e._hurtUntil - t)) * (hurt.fps || 12)) % hurt.frames };
+    const sp = Math.hypot(e.vx || 0, e.vy || 0);
+    const walk = sp > 10 && ED.sheetAnim(look, 'walk');
+    if (walk) {
+      const k = U.clamp(sp / ((e.def && e.def.speed) || 80), 0.5, 2);
+      const step = Math.max(0, Math.min(0.1, t - (last == null ? t : last)));
+      e._walkT = (e._walkT || 0) + step * k; // faster when it runs
+      return { a: walk, i: Math.floor(e._walkT * (walk.fps || 10)) % walk.frames };
+    }
+    const idle = ED.sheetAnim(look, 'idle') || walk;
+    return idle ? { a: idle, i: Math.floor(t * (idle.fps || 6)) % idle.frames } : null;
+  };
+  /** Draw one frame of the sheet, centred on the origin. */
+  ED.drawSheetFrame = function (g, look, row, col, size) {
+    const img = ED.image(look.sprite);
+    const fw = (look.frame && look.frame[0]) || 64, fh = (look.frame && look.frame[1]) || fw;
+    const w = size, hh = (size * fh) / fw;
+    if (!(img && img.complete && img.naturalWidth)) {
+      g.fillStyle = look.color || '#8a8a8a';
+      g.beginPath();
+      g.arc(0, 0, size / 3.4, 0, U.TAU);
+      g.fill();
+      return;
+    }
+    const smooth = g.imageSmoothingEnabled;
+    if (look.pixelated) g.imageSmoothingEnabled = false;
+    g.drawImage(img, col * fw, row * fh, fw, fh, -w / 2, -hh / 2, w, hh);
+    g.imageSmoothingEnabled = smooth;
+  };
+  ED.looks.sheet = function (look, kind) {
+    const four = look.layout === '4dir';
+    const off = { right: 0, down: -Math.PI / 2, left: Math.PI, up: Math.PI / 2 }[look.facing || 'right'] || 0;
+    const draw = (g, e, t) => {
+      const size = look.size || (e.r || 10) * 3.4;
+      const pose = ED.sheetPose(look, e);
+      let row = pose ? pose.a.row : 0;
+      const col = pose ? pose.i : 0;
+      if (four) {
+        // pick the row for the way it faces: down, left, right, up
+        const a = (((e.facing || 0) % U.TAU) + U.TAU) % U.TAU;
+        const dir = a < Math.PI / 4 || a >= (7 * Math.PI) / 4 ? 2 : a < (3 * Math.PI) / 4 ? 0 : a < (5 * Math.PI) / 4 ? 1 : 3;
+        row += dir;
+      } else if (look.rotate !== false && e.facing != null) g.rotate(e.facing + off);
+      if (look.bob) g.translate(0, Math.sin(t * 3 + (e.t || 0)) * 1.2);
+      ED.drawSheetFrame(g, look, row, col, size);
+    };
+    const out = { draw };
+    if (look.glow || look.eyes) {
+      out.drawGlow = (g, e, t) => {
+        if (e._sheetDeath != null) return;
+        if (look.glow) G.glow(g, e.x, e.y, look.glowSize || e.r * 2.6, look.glow, 0.25 + 0.08 * Math.sin(t * 2));
+        if (look.eyes && kind === 'enemy') eyes(g, e, look.eyes, look.eyeSpread || e.r * 0.2, look.eyeForward || e.r * 0.45, look.eyeSize || 1);
+      };
+    }
+    return out;
+  };
+  // a monster drawn from a sheet with a death animation leaves it playing where it fell, then fades
+  LM.on('enemyDied', (e) => {
+    const look = e.def && e.def.look, game = LM.game;
+    if (!look || look.type !== 'sheet' || !game || !ED.sheetAnim(look, 'death')) return;
+    if (game.fx.some((f) => f.e === e)) return; // it fell into a pit instead
+    const a = ED.sheetAnim(look, 'death'), dur = a.frames / (a.fps || 10);
+    e._sheetDeath = 0;
+    e.atk = null;
+    game.fx.push({
+      e, t: 0,
+      update(dt) {
+        this.t += dt;
+        e._sheetDeath = this.t;
+        return this.t > dur + (look.linger == null ? 6 : look.linger) + 1;
+      },
+      draw(ctx, g2, t) {
+        const fade = Math.min(1, Math.max(0, dur + (look.linger == null ? 6 : look.linger) + 1 - this.t));
+        ctx.save();
+        ctx.globalAlpha = fade * Math.max(0.0, e.vis == null ? 1 : Math.max(e.vis, 0.6));
+        ctx.translate(e.x, e.y);
+        e.def.draw(ctx, e, t, g2);
+        ctx.restore();
+      },
+    });
+  });
 
   /** A creature from parameters, in the style of the core enemies (top-down, facing right). */
   ED.looks.creature = function (look) {

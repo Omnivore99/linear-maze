@@ -38,6 +38,7 @@ Every change can be undone (**Ctrl+Z**, redo with **Ctrl+Shift+Z**). **Ctrl+S** 
 Monsters and items can be drawn by their original code, built from settings (shapes, colours, extras such as horns or a gun), drawn by a picture, or drawn by your own code.
 
 - **Look → Making a picture for it** writes a prompt for an image generator. Copy it, make the picture, then **Look → A picture → Import a picture…** It can clear a plain background, trim empty edges and shrink it to sprite size.
+- **Look → A sprite sheet (animated)** (monsters): one PNG with a grid of frames, one row per animation: idle, walk, attack, hurt and death. The game plays the right row for what the monster is doing, times the attack's blow to its wind-up, and leaves the death animation on the floor for a few seconds. **Import a sprite sheet…** keeps the sheet exactly as drawn (no trimming or shrinking). Set the frame size, which row is which and how fast it plays; each animation has a live preview, and the sheet is shown with its grid. Templates, a finished example and a best-practice guide are in `editor/templates/` (linked from the Look tab): start from `monster-sheet-64.png`, and read `SPRITE-SHEETS.md`.
 - **Tile sets → From pictures** paints floors and walls with imported textures. Several floor pictures are mixed at random, tile by tile.
 - Pictures are saved inside `packs/editor/sprites.js`, so the single-file build carries them. The **Pictures** page lists them all.
 

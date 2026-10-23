@@ -166,13 +166,15 @@
     const d = binder.draft;
     const base = M().base(kind, id) || (M().isAdded(kind, id) && M().edits().add[kind][id].$extends ? M().base(kind, M().edits().add[kind][id].$extends) : null);
     const hasOriginal = !!(base && base.draw);
-    const mode = () => (d.look ? (d.look.type === 'sprite' ? 'picture' : 'built') : d.draw && (!base || d.draw !== base.draw) ? 'code' : hasOriginal ? 'original' : d.draw ? 'code' : 'built');
+    const mode = () => (d.look ? (d.look.type === 'sprite' ? 'picture' : d.look.type === 'sheet' ? 'sheet' : 'built') : d.draw && (!base || d.draw !== base.draw) ? 'code' : hasOriginal ? 'original' : d.draw ? 'code' : 'built');
     const box = h('div', { class: 'look' });
     const body = h('div');
     const lookType = kind === 'enemies' ? 'creature' : 'object';
     const modes = [];
     if (hasOriginal) modes.push(['original', 'Original drawing (from the pack’s code)']);
-    modes.push(['built', 'Built from settings (no code)'], ['picture', 'A picture'], ['code', 'My own drawing code']);
+    modes.push(['built', 'Built from settings (no code)'], ['picture', 'A picture']);
+    if (kind === 'enemies') modes.push(['sheet', 'A sprite sheet (animated)']);
+    modes.push(['code', 'My own drawing code']);
     const setMode = (m) => {
       if (m === 'original') {
         delete d.look;
@@ -185,6 +187,8 @@
         d.look = kind === 'enemies' ? { type: 'creature', shape: 'humanoid', body: d.color || '#6b7a63', eyes: '#ff5a3a' } : { type: 'object', shape: 'box', color: '#7a5530' };
       } else if (m === 'picture') {
         d.look = { type: 'sprite', sprite: M().spriteIds()[0] || '', size: Math.round((d.radius || 10) * 2.6), facing: 'right' };
+      } else if (m === 'sheet') {
+        d.look = { type: 'sheet', sprite: '', frame: [64, 64], size: Math.round((d.radius || 10) * 3.4), layout: 'rotate', facing: 'right', anims: ED.engine.X.SHEET.defaults('rotate') };
       } else if (m === 'code') {
         delete d.look;
         if (!d.draw) d.draw = ED.engine.compile(kind === 'enemies' ? 'function (g, e, t) {\n  g.rotate(e.facing);\n  g.fillStyle = \'#8a6a5a\';\n  g.beginPath();\n  g.arc(0, 0, e.r, 0, U.TAU);\n  g.fill();\n}' : 'function (g, it, t) {\n  g.fillStyle = \'#8a6a5a\';\n  g.fillRect(-8, -8, 16, 16);\n}');
@@ -198,6 +202,7 @@
       body.appendChild(F().field('Drawn as', F().select(m, modes, setMode)));
       if (m === 'built') body.appendChild(C.builtLook(d.look, lookType, () => binder.changed()));
       if (m === 'picture') body.appendChild(C.pictureLook(kind, id, d, () => binder.changed()));
+      if (m === 'sheet') body.appendChild(C.sheetLook(kind, id, d, () => binder.changed()));
       if (m === 'code') {
         body.appendChild(F().field('Body', F().code(ED.fnSource(d.draw) || '', (fn) => { if (fn) d.draw = fn; binder.changed(); }, { name: kind + '/' + id + '/draw' }), kind === 'enemies' ? 'function (g, e, t): g is already moved to the monster; call g.rotate(e.facing) to face where it walks. e.r is its radius.' : 'function (g, it, t): g is already moved to the item. it.props holds its placement settings.'));
         body.appendChild(F().field('Glow', F().code(ED.fnSource(d.drawGlow) || '', (fn) => { if (fn) d.drawGlow = fn; else delete d.drawGlow; binder.changed(); }, { name: kind + '/' + id + '/drawGlow', rows: 6 }), kind === 'enemies' ? 'Drawn in world space (use e.x, e.y), added as light. eyes(g, e, colour, spread, forward, size) draws glowing eyes.' : 'Drawn after the lighting, added as light. G.glow(g, x, y, radius, colour, alpha).'));
@@ -273,7 +278,124 @@
     return box;
   };
 
-  /** Import an image file as a sprite: trims, optionally clears a flat background, scales to 160px. */
+
+  // ------------------------------------------------------------ animated sprite sheets
+  /** Edit a sprite-sheet look: the sheet, its grid, which row is which animation, and live previews. */
+  C.sheetLook = function (kind, id, d, changed) {
+    const look = d.look;
+    const X = ED.engine.X;
+    const set = (k) => (v) => {
+      if (v === undefined || v === '') delete look[k];
+      else look[k] = v;
+      changed();
+      refresh();
+    };
+    const pics = M().spriteIds();
+    const box = h('div', { class: 'sheet-look' });
+    const fw = () => (look.frame && look.frame[0]) || 64, fh = () => (look.frame && look.frame[1]) || fw();
+    const img = new Image();
+    const load = () => {
+      const src = look.sprite && M().sprites[look.sprite];
+      if (src && img.src !== src) img.src = src;
+    };
+    load();
+    // the sheet, with its grid drawn over it
+    const sheetCanvas = h('canvas', { class: 'sheet-grid' });
+    const drawSheet = () => {
+      if (!img.complete || !img.naturalWidth) return;
+      const k = Math.min(1, 460 / img.naturalWidth);
+      sheetCanvas.width = Math.round(img.naturalWidth * k);
+      sheetCanvas.height = Math.round(img.naturalHeight * k);
+      const g = sheetCanvas.getContext('2d');
+      g.clearRect(0, 0, sheetCanvas.width, sheetCanvas.height);
+      g.drawImage(img, 0, 0, sheetCanvas.width, sheetCanvas.height);
+      g.strokeStyle = 'rgba(255, 64, 160, 0.6)';
+      g.lineWidth = 1;
+      for (let x = 0; x <= img.naturalWidth; x += fw()) { g.beginPath(); g.moveTo(x * k + 0.5, 0); g.lineTo(x * k + 0.5, sheetCanvas.height); g.stroke(); }
+      for (let y = 0; y <= img.naturalHeight; y += fh()) { g.beginPath(); g.moveTo(0, y * k + 0.5); g.lineTo(sheetCanvas.width, y * k + 0.5); g.stroke(); }
+    };
+    img.onload = () => { drawSheet(); checkFit(); };
+    const fit = h('p', { class: 'hint' });
+    const checkFit = () => {
+      if (!img.naturalWidth) return fit.textContent = '';
+      const cols = img.naturalWidth / fw(), rows = img.naturalHeight / fh();
+      const ok = Number.isInteger(cols) && Number.isInteger(rows);
+      fit.textContent = (ok ? '' : '⚠ ') + 'The sheet is ' + img.naturalWidth + ' × ' + img.naturalHeight + ' pixels: ' + (ok ? cols + ' columns × ' + rows + ' rows of ' + fw() + ' × ' + fh() + ' frames.' : 'that isn’t a whole number of ' + fw() + ' × ' + fh() + ' frames. Check the frame size.');
+      fit.classList.toggle('warn', !ok);
+    };
+    box.appendChild(h('div', { class: 'row' },
+      F().field('Sprite sheet', F().select(look.sprite, [[undefined, pics.length ? '(choose)' : '(no pictures yet)']].concat(pics.map((p) => [p, p])), (v) => { set('sprite')(v); load(); })),
+      h('button', { class: 'btn small', on: { click: () => C.importPicture(id + '-sheet', (sid) => { look.sprite = sid; changed(); ED.rerender(); }, { sheet: true }) } }, 'Import a sprite sheet…')));
+    box.appendChild(h('p', { class: 'muted' }, 'Start from a template (open it in your art program, draw on a layer above it, hide the guide, export a transparent PNG): ',
+      h('a', { href: 'templates/monster-sheet-64.png', download: '' }, 'monster, 64 px frames'), ' · ',
+      h('a', { href: 'templates/monster-sheet-128.png', download: '' }, 'big monster or boss, 128 px'), ' · ',
+      h('a', { href: 'templates/monster-sheet-4dir-64.png', download: '' }, 'four directions, 64 px'), ' · ',
+      h('a', { href: 'templates/example-beetle-64.png', download: '' }, 'a finished example'), ' · ',
+      h('a', { href: 'templates/SPRITE-SHEETS.md', target: '_blank' }, 'the guide')));
+    box.appendChild(h('div', { class: 'subform' },
+      F().field('Frame width (pixels)', F().number(fw(), (v) => { look.frame = [v || 64, fh()]; changed(); refresh(); }, { min: 8, max: 512 })),
+      F().field('Frame height (pixels)', F().number(fh(), (v) => { look.frame = [fw(), v || fw()]; changed(); refresh(); }, { min: 8, max: 512 })),
+      F().field('Layout', F().select(look.layout || 'rotate', [['rotate', 'Seen from above; the game turns it (one row per animation)'], ['4dir', 'Four directions (rows: down, left, right, up)']], (v) => {
+        look.layout = v;
+        look.anims = X.SHEET.defaults(v);
+        changed();
+        ED.rerender();
+      })),
+      (look.layout || 'rotate') === 'rotate' ? F().field('The drawing faces', F().select(look.facing || 'right', [['right', 'right'], ['up', 'up'], ['left', 'left'], ['down', 'down']], set('facing'))) : null,
+      F().field('Size in the game (units across one frame)', F().number(look.size, set('size')), 'A tile is 32 units. About 3.4 × the monster’s radius suits a frame with a little room around the body.'),
+      F().field('Pixel art (keep pixels sharp)', F().bool(look.pixelated, (v) => set('pixelated')(v || undefined))),
+      F().field('Glow', F().color(look.glow, set('glow'), { allowEmpty: true })),
+      F().field('Glowing eyes', F().color(look.eyes, set('eyes'), { allowEmpty: true })),
+      F().field('Seconds the body stays after the death animation', F().number(look.linger, set('linger'), { min: 0, max: 60, placeholder: 6 }))));
+    // the animations: which row, how many frames, how fast, with a live preview of each
+    look.anims = look.anims || X.SHEET.defaults(look.layout);
+    const table = h('table', { class: 'sheet-anims' },
+      h('tr', null, h('th', null, 'Animation'), h('th', null, (look.layout === '4dir' ? 'First row' : 'Row') + ' (from 0)'), h('th', null, 'Frames'), h('th', null, 'Frames a second'), h('th', null, 'Hit frame'), h('th', null, 'Preview')));
+    const previews = [];
+    const WHEN = { idle: 'standing still', walk: 'moving', attack: 'attacking (timed to its wind-up)', hurt: 'just hit', death: 'dying (then stays a while)' };
+    for (const name of X.SHEET.ANIMS) {
+      const a = (look.anims[name] = look.anims[name] || {});
+      const num = (k, o) => F().number(a[k], (v) => { if (v === undefined || v === '') delete a[k]; else a[k] = v; changed(); }, o);
+      const cv = h('canvas', { width: 64, height: 64, class: 'sheet-preview' });
+      previews.push({ cv, name });
+      table.appendChild(h('tr', null,
+        h('td', null, h('b', null, name), h('br'), h('small', { class: 'muted' }, WHEN[name])),
+        h('td', null, num('row', { min: 0, max: 99 })), h('td', null, num('frames', { min: 0, max: 64 })), h('td', null, num('fps', { min: 1, max: 60 })),
+        h('td', null, name === 'attack' ? num('hit', { min: 0, max: 63 }) : null), h('td', null, cv)));
+    }
+    box.appendChild(h('div', { class: 'insp-section' }, h('h4', null, 'Animations'),
+      h('p', { class: 'muted' }, 'Set Frames to 0 for an animation the sheet doesn’t have (the monster then uses its idle or walk frames). The attack plays its frames before the hit frame during the wind-up, so the blow lands on the hit frame.'),
+      table));
+    box.appendChild(h('div', { class: 'insp-section' }, h('h4', null, 'The sheet'), fit, sheetCanvas));
+    // animate the previews while this page is on screen
+    const t0 = performance.now();
+    const tick = () => {
+      if (!box.isConnected) return;
+      if (img.complete && img.naturalWidth) {
+        const t = (performance.now() - t0) / 1000;
+        for (const p of previews) {
+          const a = X.sheetAnim(look, p.name);
+          const g = p.cv.getContext('2d');
+          g.clearRect(0, 0, 64, 64);
+          g.fillStyle = '#2a2622';
+          g.fillRect(0, 0, 64, 64);
+          if (!a) continue;
+          const i = Math.floor(t * (a.fps || 8)) % a.frames;
+          const row = a.row + (look.layout === '4dir' ? 2 : 0); // the right-facing row
+          g.imageSmoothingEnabled = !look.pixelated;
+          const k = Math.min(64 / fw(), 64 / fh());
+          g.drawImage(img, i * fw(), row * fh(), fw(), fh(), 32 - (fw() * k) / 2, 32 - (fh() * k) / 2, fw() * k, fh() * k);
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    const refresh = () => { drawSheet(); checkFit(); };
+    requestAnimationFrame(tick);
+    setTimeout(refresh, 0);
+    return box;
+  };
+
+  /** Import an image file as a sprite: trims, optionally clears a flat background, scales to 160px (o.sheet: kept exactly as drawn). */
   C.importPicture = async function (suggestId, done, o) {
     o = o || {};
     const file = await ED.pickFile('image/*');
@@ -285,7 +407,7 @@
       i.onerror = () => rej(new Error('That file isn’t a picture the browser can read.'));
       i.src = url;
     });
-    let clearBg = !o.tile, tol = 40, trim = !o.tile, max = o.tile ? 64 : 160;
+    let clearBg = !o.tile && !o.sheet, tol = 40, trim = !o.tile && !o.sheet, max = o.sheet ? 4096 : o.tile ? 64 : 160;
     const out = h('canvas');
     const before = h('canvas');
     const name = h('input', { type: 'text', value: ED.uniqueId(suggestId || file.name.replace(/\.\w+$/, ''), (x) => !!M().sprites[x]) });
@@ -301,17 +423,19 @@
     before.getContext('2d').drawImage(img, 0, 0, before.width, before.height);
     render();
     ED.modal({
-      title: 'Import a picture', wide: true,
+      title: o.sheet ? 'Import a sprite sheet' : 'Import a picture', wide: true,
       body: h('div', null,
         h('div', { class: 'img-edit' }, h('div', null, h('p', { class: 'muted' }, 'Original'), before), h('div', null, h('p', { class: 'muted' }, 'In the game'), out)),
         h('div', { class: 'subform', style: { marginTop: '12px' } },
           F().field('Name', name),
           F().field('Remove a plain background', F().bool(clearBg, (v) => { clearBg = v; render(); })),
           F().field('Background tolerance', F().number(tol, (v) => { tol = v || 0; render(); }, { min: 0, max: 200 })),
-          F().field('Trim empty edges', F().bool(trim, (v) => { trim = v; render(); })),
-          F().field('Largest side (pixels)', F().number(max, (v) => { max = v || 160; render(); }, { min: 16, max: 512 }))),
-        h('p', { class: 'hint' }, 'Pictures are saved into packs/editor/sprites.js, so the single-file build carries them too. Keep them small: a top-down sprite reads best at 64 to 160 pixels.')),
-      actions: [{ label: 'Cancel', quiet: true }, { label: 'Use this picture', primary: true, onClick: () => {
+          o.sheet ? null : F().field('Trim empty edges', F().bool(trim, (v) => { trim = v; render(); })),
+          o.sheet ? null : F().field('Largest side (pixels)', F().number(max, (v) => { max = v || 160; render(); }, { min: 16, max: 512 }))),
+        h('p', { class: 'hint' }, o.sheet
+          ? 'A sprite sheet is used exactly as drawn: one frame per grid cell, nothing trimmed or resized. Use a transparent PNG (leave “Remove a plain background” off). Sheets are saved into packs/editor/sprites.js, so keep them under about 1 MB.'
+          : 'Pictures are saved into packs/editor/sprites.js, so the single-file build carries them too. Keep them small: a top-down sprite reads best at 64 to 160 pixels.')),
+      actions: [{ label: 'Cancel', quiet: true }, { label: o.sheet ? 'Use this sheet' : 'Use this picture', primary: true, onClick: () => {
         const id = ED.slug(name.value) || 'picture';
         M().setSprite(id, out.toDataURL('image/png'), 'Import picture ' + id);
         done(id);
@@ -387,6 +511,13 @@
     const colours = [];
     const look = d.look || {};
     for (const k of ['body', 'color', 'head', 'accent', 'glow', 'eyes']) if (look[k]) colours.push(k + ' ' + look[k]);
+    if (kind === 'enemies' && look.type === 'sheet') {
+      const fw = (look.frame && look.frame[0]) || 64;
+      return 'A sprite sheet for a top-down game monster called “' + name + '”, for a dark, torch-lit dungeon shooter. A transparent PNG laid out as a grid of ' + fw + ' × ' + fw + ' pixel frames, 8 columns wide. ' +
+        'Every frame shows the monster from directly above, facing right, centred in its frame, the same size in every frame, with a dark 1-pixel outline. Rows, top to bottom: ' +
+        'row 1 idle (4 frames, gentle breathing), row 2 walk (6 frames, a full stride loop), row 3 attack (6 frames: 3 wind-up, the strike on frame 4, 2 recovery), row 4 hurt (2 frames, recoiling), row 5 death (6 frames, collapsing, ending on a still body). ' +
+        'Unused cells stay empty. No text, no grid lines, no shadow on the ground, no background' + (colours.length ? '. Colours: ' + colours.join(', ') : '') + '.';
+    }
     if (kind === 'enemies') {
       const atk = (d.attacks || []).map((a) => a.type).join(' and ');
       return 'A single top-down game sprite of “' + name + '”, a monster for a dark, torch-lit dungeon shooter. Seen from directly above, facing right, centred, whole body visible, ' +
